@@ -1,7 +1,6 @@
-
 import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
@@ -18,72 +17,55 @@ const Color ink = Color(0xFF263238);
 const Color accent = Color(0xFF8B5E3C);
 const Color paper = Color(0xFFFFFCF7);
 
-enum PracticeMode {
-  tracing,
-  copying,
-  dictation,
+enum PracticeMode { tracing, copying, dictation }
+
+enum GridType { square, tian, mi }
+
+enum FontStyleChoice { kai, xingKai, xingShu, liShu, song, hei }
+
+extension ModeInfo on PracticeMode {
+  String get label => switch (this) {
+        PracticeMode.tracing => '描红',
+        PracticeMode.copying => '临摹',
+        PracticeMode.dictation => '默写',
+      };
 }
 
-enum GridType {
-  square,
-  tian,
-  mi,
+extension GridInfo on GridType {
+  String get label => switch (this) {
+        GridType.square => '方格',
+        GridType.tian => '田字格',
+        GridType.mi => '米字格',
+      };
 }
 
-enum FontStyleChoice {
-  kai,
-  song,
-  hei,
-}
+extension FontInfo on FontStyleChoice {
+  String get label => switch (this) {
+        FontStyleChoice.kai => '楷体',
+        FontStyleChoice.xingKai => '行楷',
+        FontStyleChoice.xingShu => '行书',
+        FontStyleChoice.liShu => '隶书',
+        FontStyleChoice.song => '宋体',
+        FontStyleChoice.hei => '黑体',
+      };
 
-extension PracticeModeText on PracticeMode {
-  String get label {
-    switch (this) {
-      case PracticeMode.tracing:
-        return '描红';
-      case PracticeMode.copying:
-        return '临摹';
-      case PracticeMode.dictation:
-        return '默写';
-    }
-  }
-}
+  String get family => switch (this) {
+        FontStyleChoice.kai => 'KaiTi',
+        FontStyleChoice.xingKai => 'XingKai',
+        FontStyleChoice.xingShu => 'XingShu',
+        FontStyleChoice.liShu => 'LiShu',
+        FontStyleChoice.song => 'SongTi',
+        FontStyleChoice.hei => 'HeiTi',
+      };
 
-extension GridTypeText on GridType {
-  String get label {
-    switch (this) {
-      case GridType.square:
-        return '方格';
-      case GridType.tian:
-        return '田字格';
-      case GridType.mi:
-        return '米字格';
-    }
-  }
-}
-
-extension FontStyleText on FontStyleChoice {
-  String get label {
-    switch (this) {
-      case FontStyleChoice.kai:
-        return '楷体';
-      case FontStyleChoice.song:
-        return '宋体';
-      case FontStyleChoice.hei:
-        return '黑体';
-    }
-  }
-
-  String get family {
-    switch (this) {
-      case FontStyleChoice.kai:
-        return 'KaiTi';
-      case FontStyleChoice.song:
-        return 'SimSun';
-      case FontStyleChoice.hei:
-        return 'SimHei';
-    }
-  }
+  String get assetPath => switch (this) {
+        FontStyleChoice.kai => 'assets/fonts/KaiTi.ttf',
+        FontStyleChoice.xingKai => 'assets/fonts/XingKai.ttf',
+        FontStyleChoice.xingShu => 'assets/fonts/XingShu.ttf',
+        FontStyleChoice.liShu => 'assets/fonts/LiShu.ttf',
+        FontStyleChoice.song => 'assets/fonts/SongTi.ttf',
+        FontStyleChoice.hei => 'assets/fonts/HeiTi.ttf',
+      };
 }
 
 class ShufaApp extends StatelessWidget {
@@ -104,15 +86,6 @@ class ShufaApp extends StatelessWidget {
         appBarTheme: const AppBarTheme(
           backgroundColor: paper,
           foregroundColor: ink,
-          centerTitle: false,
-        ),
-        cardTheme: CardThemeData(
-          color: Colors.white,
-          elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-            side: const BorderSide(color: Color(0xFFE9E0D5)),
-          ),
         ),
       ),
       home: const PracticeHomePage(),
@@ -142,33 +115,27 @@ class _PracticeHomePageState extends State<PracticeHomePage> {
   bool showTitle = true;
   bool showAuthor = true;
   bool showOriginal = true;
-
-  Set<String> favorites = {};
   bool favoritesOnly = false;
-  bool loadingFavorites = true;
+  Set<String> favorites = {};
 
   List<String> get categories {
-    final values = poems.map((p) => p.category).toSet().toList()..sort();
-    return ['全部', ...values];
+    final result = poems.map((p) => p.category).toSet().toList()..sort();
+    return ['全部', ...result];
   }
 
   List<Poem> get filteredPoems {
     final query = searchController.text.trim().toLowerCase();
-
     return poems.where((poem) {
-      final matchesCategory = selectedCategory == '全部' ||
-          poem.category == selectedCategory;
-
-      final matchesFavorite =
+      final categoryMatches =
+          selectedCategory == '全部' || poem.category == selectedCategory;
+      final favoriteMatches =
           !favoritesOnly || favorites.contains(poem.title);
-
-      final searchable =
+      final text =
           '${poem.title} ${poem.author} ${poem.category} ${poem.lines.join()}'
               .toLowerCase();
-
-      final matchesSearch = query.isEmpty || searchable.contains(query);
-
-      return matchesCategory && matchesFavorite && matchesSearch;
+      return categoryMatches &&
+          favoriteMatches &&
+          (query.isEmpty || text.contains(query));
     }).toList();
   }
 
@@ -176,18 +143,16 @@ class _PracticeHomePageState extends State<PracticeHomePage> {
   void initState() {
     super.initState();
     selectedPoem = poems.isEmpty ? null : poems.first;
-    searchController.addListener(_handleSearch);
+    searchController.addListener(_onSearchChanged);
     _loadFavorites();
   }
 
-  void _handleSearch() {
+  void _onSearchChanged() {
+    final available = filteredPoems;
     setState(() {
-      final available = filteredPoems;
-      if (selectedPoem != null &&
+      if (selectedPoem == null ||
           !available.any((p) => p.title == selectedPoem!.title)) {
         selectedPoem = available.isEmpty ? null : available.first;
-      } else if (selectedPoem == null && available.isNotEmpty) {
-        selectedPoem = available.first;
       }
     });
   }
@@ -195,11 +160,8 @@ class _PracticeHomePageState extends State<PracticeHomePage> {
   Future<void> _loadFavorites() async {
     final prefs = await SharedPreferences.getInstance();
     if (!mounted) return;
-
     setState(() {
       favorites = (prefs.getStringList('shufa_favorites') ?? []).toSet();
-      loadingFavorites = false;
-
       final available = filteredPoems;
       if (selectedPoem == null && available.isNotEmpty) {
         selectedPoem = available.first;
@@ -209,21 +171,17 @@ class _PracticeHomePageState extends State<PracticeHomePage> {
 
   Future<void> _toggleFavorite(Poem poem) async {
     final prefs = await SharedPreferences.getInstance();
-
     setState(() {
-      if (favorites.contains(poem.title)) {
+      if (!favorites.add(poem.title)) {
         favorites.remove(poem.title);
-      } else {
-        favorites.add(poem.title);
       }
     });
-
     await prefs.setStringList('shufa_favorites', favorites.toList());
 
     if (!mounted) return;
-
-    if (favoritesOnly && !favorites.contains(poem.title)) {
-      final available = filteredPoems;
+    final available = filteredPoems;
+    if (selectedPoem != null &&
+        !available.any((p) => p.title == selectedPoem!.title)) {
       setState(() {
         selectedPoem = available.isEmpty ? null : available.first;
       });
@@ -232,7 +190,7 @@ class _PracticeHomePageState extends State<PracticeHomePage> {
 
   @override
   void dispose() {
-    searchController.removeListener(_handleSearch);
+    searchController.removeListener(_onSearchChanged);
     searchController.dispose();
     super.dispose();
   }
@@ -253,20 +211,18 @@ class _PracticeHomePageState extends State<PracticeHomePage> {
             onPressed: () {
               setState(() {
                 favoritesOnly = !favoritesOnly;
-                final available = filteredPoems;
-                if (selectedPoem != null &&
-                    !available.any((p) => p.title == selectedPoem!.title)) {
-                  selectedPoem =
-                      available.isEmpty ? null : available.first;
+                final list = filteredPoems;
+                if (selectedPoem == null ||
+                    !list.any((p) => p.title == selectedPoem!.title)) {
+                  selectedPoem = list.isEmpty ? null : list.first;
                 }
               });
             },
             icon: Icon(
               favoritesOnly ? Icons.favorite : Icons.favorite_border,
-              color: favoritesOnly ? Colors.redAccent : ink,
+              color: favoritesOnly ? Colors.red : ink,
             ),
           ),
-          const SizedBox(width: 8),
         ],
       ),
       body: SafeArea(
@@ -274,36 +230,57 @@ class _PracticeHomePageState extends State<PracticeHomePage> {
           children: [
             Expanded(
               child: ListView(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
+                padding: const EdgeInsets.all(16),
                 children: [
-                  _buildIntro(),
-                  const SizedBox(height: 16),
-                  _buildPoemSelector(available),
-                  const SizedBox(height: 16),
-                  _buildSettings(),
-                  const SizedBox(height: 16),
-                  _buildPreview(),
+                  _intro(),
+                  const SizedBox(height: 14),
+                  _poemSelector(available),
+                  const SizedBox(height: 14),
+                  _settings(),
+                  const SizedBox(height: 14),
+                  _preview(),
                   const SizedBox(height: 12),
-                  _buildTips(),
+                  const Text(
+                    '提示：预览用于查看大致排版，打印效果以导出的 PDF 为准。',
+                    style: TextStyle(fontSize: 12, color: Colors.black54),
+                  ),
                 ],
               ),
             ),
-            _buildBottomBar(),
+            Container(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+              decoration: const BoxDecoration(
+                border: Border(
+                  top: BorderSide(color: Color(0xFFE9E0D5)),
+                ),
+              ),
+              child: SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: FilledButton.icon(
+                  onPressed: selectedPoem == null ? null : _exportPdf,
+                  icon: const Icon(Icons.picture_as_pdf),
+                  label: const Text('生成并打印练习纸 PDF'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: accent,
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              ),
+            ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildIntro() {
+  Widget _intro() {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(18),
         gradient: const LinearGradient(
           colors: [Color(0xFFF1E4D3), Color(0xFFFFF9F0)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
         ),
       ),
       child: const Column(
@@ -319,401 +296,331 @@ class _PracticeHomePageState extends State<PracticeHomePage> {
           ),
           SizedBox(height: 8),
           Text(
-            '选择喜欢的诗词，自定义字体、格子和练习方式，生成可打印的练字纸。',
-            style: TextStyle(
-              fontSize: 13,
-              height: 1.7,
-              color: Color(0xFF6D6258),
-            ),
+            '自由选择诗词、字体和格子，制作可打印的练字纸。',
+            style: TextStyle(fontSize: 13, height: 1.6),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildPoemSelector(List<Poem> available) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const _SectionHeading(
-              number: '01',
-              title: '选择诗词',
+  Widget _poemSelector(List<Poem> available) {
+    return _panel(
+      title: '01  选择诗词',
+      child: Column(
+        children: [
+          TextField(
+            controller: searchController,
+            decoration: InputDecoration(
+              hintText: '搜索诗名、作者或诗句',
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: searchController.text.isEmpty
+                  ? null
+                  : IconButton(
+                      onPressed: searchController.clear,
+                      icon: const Icon(Icons.clear),
+                    ),
+              border: const OutlineInputBorder(),
             ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: searchController,
-              decoration: InputDecoration(
-                hintText: '搜索诗名、作者或诗句',
-                prefixIcon: const Icon(Icons.search),
-                suffixIcon: searchController.text.isNotEmpty
-                    ? IconButton(
-                        onPressed: searchController.clear,
-                        icon: const Icon(Icons.clear),
-                      )
-                    : null,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                contentPadding: const EdgeInsets.symmetric(vertical: 12),
-              ),
+          ),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<String>(
+            value: categories.contains(selectedCategory)
+                ? selectedCategory
+                : '全部',
+            isExpanded: true,
+            decoration: const InputDecoration(
+              labelText: '诗词分类',
+              border: OutlineInputBorder(),
             ),
-            const SizedBox(height: 12),
+            items: categories
+                .map((s) => DropdownMenuItem(value: s, child: Text(s)))
+                .toList(),
+            onChanged: (value) {
+              if (value == null) return;
+              setState(() {
+                selectedCategory = value;
+                final list = filteredPoems;
+                if (selectedPoem == null ||
+                    !list.any((p) => p.title == selectedPoem!.title)) {
+                  selectedPoem = list.isEmpty ? null : list.first;
+                }
+              });
+            },
+          ),
+          const SizedBox(height: 12),
+          if (available.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(18),
+              child: Text('没有找到符合条件的诗词'),
+            )
+          else
             DropdownButtonFormField<String>(
-              value: selectedCategory,
+              value: available.any((p) => p.title == selectedPoem?.title)
+                  ? selectedPoem!.title
+                  : available.first.title,
               isExpanded: true,
               decoration: const InputDecoration(
-                labelText: '诗词分类',
+                labelText: '选择作品',
                 border: OutlineInputBorder(),
               ),
-              items: categories
+              items: available
                   .map(
-                    (category) => DropdownMenuItem(
-                      value: category,
-                      child: Text(category),
+                    (p) => DropdownMenuItem(
+                      value: p.title,
+                      child: Text(
+                        '${p.title} · ${p.author}',
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                   )
                   .toList(),
               onChanged: (value) {
                 if (value == null) return;
                 setState(() {
-                  selectedCategory = value;
-                  final available = filteredPoems;
-                  if (selectedPoem == null ||
-                      !available.any(
-                        (p) => p.title == selectedPoem!.title,
-                      )) {
-                    selectedPoem =
-                        available.isEmpty ? null : available.first;
-                  }
+                  selectedPoem =
+                      available.firstWhere((p) => p.title == value);
                 });
               },
             ),
-            const SizedBox(height: 12),
-            if (loadingFavorites)
-              const LinearProgressIndicator()
-            else if (available.isEmpty)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 18),
-                child: Center(
-                  child: Text('没有找到符合条件的诗词'),
+          if (selectedPoem != null) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    selectedPoem!.category,
+                    style: const TextStyle(color: accent, fontSize: 12),
+                  ),
                 ),
-              )
-            else
-              DropdownButtonFormField<String>(
-                value: available.any(
-                  (p) => p.title == selectedPoem?.title,
-                )
-                    ? selectedPoem!.title
-                    : available.first.title,
-                isExpanded: true,
-                decoration: const InputDecoration(
-                  labelText: '选择作品',
-                  border: OutlineInputBorder(),
+                TextButton.icon(
+                  onPressed: () => _toggleFavorite(selectedPoem!),
+                  icon: Icon(
+                    favorites.contains(selectedPoem!.title)
+                        ? Icons.favorite
+                        : Icons.favorite_border,
+                  ),
+                  label: Text(
+                    favorites.contains(selectedPoem!.title) ? '已收藏' : '收藏',
+                  ),
                 ),
-                items: available
-                    .map(
-                      (poem) => DropdownMenuItem(
-                        value: poem.title,
-                        child: Text(
-                          '${poem.title} · ${poem.author}',
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    )
-                    .toList(),
-                onChanged: (value) {
-                  if (value == null) return;
-                  setState(() {
-                    selectedPoem = available.firstWhere(
-                      (p) => p.title == value,
-                    );
-                  });
-                },
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _settings() {
+    return _panel(
+      title: '02  练习设置',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('练习方式', style: TextStyle(fontWeight: FontWeight.w600)),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            children: PracticeMode.values.map((item) {
+              return ChoiceChip(
+                label: Text(item.label),
+                selected: mode == item,
+                onSelected: (_) => setState(() => mode = item),
+              );
+            }).toList(),
+          ),
+          const SizedBox(height: 14),
+          const Text('格子样式', style: TextStyle(fontWeight: FontWeight.w600)),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            children: GridType.values.map((item) {
+              return ChoiceChip(
+                label: Text(item.label),
+                selected: gridType == item,
+                onSelected: (_) => setState(() => gridType = item),
+              );
+            }).toList(),
+          ),
+          const SizedBox(height: 14),
+          const Text('字体选择', style: TextStyle(fontWeight: FontWeight.w600)),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: FontStyleChoice.values.map((item) {
+              return ChoiceChip(
+                label: Text(item.label),
+                selected: fontStyle == item,
+                onSelected: (_) => setState(() => fontStyle = item),
+              );
+            }).toList(),
+          ),
+          const SizedBox(height: 12),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8F2EA),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              '当前字体：${fontStyle.label}',
+              style: TextStyle(
+                fontFamily: fontStyle.family,
+                fontSize: 22,
+                color: ink,
               ),
-            if (selectedPoem != null) ...[
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      selectedPoem!.category,
-                      style: const TextStyle(
-                        color: accent,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-                  TextButton.icon(
-                    onPressed: () => _toggleFavorite(selectedPoem!),
-                    icon: Icon(
-                      favorites.contains(selectedPoem!.title)
-                          ? Icons.favorite
-                          : Icons.favorite_border,
-                      size: 18,
-                    ),
-                    label: Text(
-                      favorites.contains(selectedPoem!.title)
-                          ? '已收藏'
-                          : '收藏诗词',
-                    ),
-                  ),
-                ],
+            ),
+          ),
+          const Divider(height: 28),
+          Row(
+            children: [
+              const Expanded(child: Text('每字重复次数')),
+              IconButton(
+                onPressed: repeatCount > 1
+                    ? () => setState(() => repeatCount--)
+                    : null,
+                icon: const Icon(Icons.remove_circle_outline),
+              ),
+              Text('$repeatCount 次'),
+              IconButton(
+                onPressed: repeatCount < 6
+                    ? () => setState(() => repeatCount++)
+                    : null,
+                icon: const Icon(Icons.add_circle_outline),
               ),
             ],
-          ],
-        ),
+          ),
+          Row(
+            children: [
+              const Expanded(child: Text('格子大小')),
+              Text('${cellSize.round()}'),
+            ],
+          ),
+          Slider(
+            value: cellSize,
+            min: 28,
+            max: 56,
+            divisions: 7,
+            onChanged: (v) => setState(() => cellSize = v),
+          ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('显示诗词标题'),
+            value: showTitle,
+            onChanged: (v) => setState(() => showTitle = v),
+          ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('显示作者'),
+            value: showAuthor,
+            onChanged: (v) => setState(() => showAuthor = v),
+          ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('显示原诗文字'),
+            subtitle: const Text('关闭后生成纯格子练习纸'),
+            value: showOriginal,
+            onChanged: (v) => setState(() => showOriginal = v),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildSettings() {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const _SectionHeading(number: '02', title: '练习设置'),
-            const SizedBox(height: 14),
-            const Text(
-              '练习方式',
-              style: TextStyle(fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              children: PracticeMode.values.map((item) {
-                return ChoiceChip(
-                  label: Text(item.label),
-                  selected: mode == item,
-                  onSelected: (_) => setState(() => mode = item),
-                );
-              }).toList(),
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              '格子样式',
-              style: TextStyle(fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              children: GridType.values.map((item) {
-                return ChoiceChip(
-                  label: Text(item.label),
-                  selected: gridType == item,
-                  onSelected: (_) => setState(() => gridType = item),
-                );
-              }).toList(),
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              '字体风格',
-              style: TextStyle(fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              children: FontStyleChoice.values.map((item) {
-                return ChoiceChip(
-                  label: Text(item.label),
-                  selected: fontStyle == item,
-                  onSelected: (_) => setState(() => fontStyle = item),
-                );
-              }).toList(),
-            ),
-            const Divider(height: 28),
-            Row(
-              children: [
-                const Expanded(child: Text('每个字重复次数')),
-                IconButton(
-                  onPressed: repeatCount > 1
-                      ? () => setState(() => repeatCount--)
-                      : null,
-                  icon: const Icon(Icons.remove_circle_outline),
-                ),
-                Text(
-                  '$repeatCount 次',
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-                IconButton(
-                  onPressed: repeatCount < 6
-                      ? () => setState(() => repeatCount++)
-                      : null,
-                  icon: const Icon(Icons.add_circle_outline),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                const Expanded(child: Text('格子大小')),
-                Text('${cellSize.round()} pt'),
-              ],
-            ),
-            Slider(
-              value: cellSize,
-              min: 28,
-              max: 56,
-              divisions: 7,
-              label: '${cellSize.round()}',
-              onChanged: (value) {
-                setState(() => cellSize = value);
-              },
-            ),
-            const Divider(height: 24),
-            _SwitchLine(
-              title: '显示诗词标题',
-              value: showTitle,
-              onChanged: (value) => setState(() => showTitle = value),
-            ),
-            _SwitchLine(
-              title: '显示作者',
-              value: showAuthor,
-              onChanged: (value) => setState(() => showAuthor = value),
-            ),
-            _SwitchLine(
-              title: '显示原诗文字',
-              subtitle: '关闭后可制作纯格子练习纸',
-              value: showOriginal,
-              onChanged: (value) => setState(() => showOriginal = value),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPreview() {
+  Widget _preview() {
     final poem = selectedPoem;
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const _SectionHeading(number: '03', title: '练习页预览'),
-            const SizedBox(height: 12),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(
-                horizontal: 10,
-                vertical: 20,
-              ),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                border: Border.all(color: const Color(0xFFE6E1DA)),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color(0x0A000000),
-                    blurRadius: 8,
-                    offset: Offset(0, 3),
-                  ),
+    return _panel(
+      title: '03  练习页预览',
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 18),
+        color: Colors.white,
+        child: poem == null
+            ? const Text('请先选择诗词')
+            : Column(
+                children: [
+                  if (showTitle)
+                    Text(
+                      poem.title,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontFamily: fontStyle.family,
+                        fontSize: 21,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  if (showAuthor)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 5, bottom: 12),
+                      child: Text(
+                        poem.author,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.black54,
+                        ),
+                      ),
+                    ),
+                  if (showOriginal)
+                    ...poem.lines.map(
+                      (line) => Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Text(
+                          line,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontFamily: fontStyle.family,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                    ),
+                  const SizedBox(height: 14),
+                  _previewGrid(poem),
                 ],
               ),
-              child: poem == null
-                  ? const Center(child: Text('请先选择诗词'))
-                  : Column(
-                      children: [
-                        if (showTitle)
-                          Text(
-                            poem.title,
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontFamily: fontStyle.family,
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                              color: ink,
-                            ),
-                          ),
-                        if (showAuthor) ...[
-                          const SizedBox(height: 5),
-                          Text(
-                            poem.author,
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: Colors.black54,
-                            ),
-                          ),
-                        ],
-                        if (showTitle || showAuthor)
-                          const SizedBox(height: 18),
-                        if (showOriginal)
-                          ...poem.lines.map(
-                            (line) => Padding(
-                              padding: const EdgeInsets.only(bottom: 5),
-                              child: Text(
-                                line,
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  fontFamily: fontStyle.family,
-                                  fontSize: 14,
-                                  color: ink,
-                                ),
-                              ),
-                            ),
-                          ),
-                        const SizedBox(height: 16),
-                        _buildPreviewGrid(poem),
-                      ],
-                    ),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              '预览用于查看版式。实际打印请以导出的 PDF 为准。',
-              style: TextStyle(fontSize: 11, color: Colors.black54),
-            ),
-          ],
-        ),
       ),
     );
   }
 
-  Widget _buildPreviewGrid(Poem poem) {
-    final characters = poem.lines.join().runes
+  Widget _previewGrid(Poem poem) {
+    final chars = poem.lines.join().runes
         .map(String.fromCharCode)
-        .where((s) => s.trim().isNotEmpty)
+        .where((c) => c.trim().isNotEmpty)
+        .take(12)
         .toList();
 
-    final displayed = <String>[];
-    for (final char in characters.take(12)) {
+    final items = <String>[];
+    for (final char in chars) {
       for (int i = 0; i < repeatCount; i++) {
-        displayed.add(char);
+        items.add(char);
       }
     }
 
-    final width = math.min(cellSize, 48.0);
-
+    final side = math.min(cellSize, 48.0);
     return Wrap(
       alignment: WrapAlignment.center,
-      spacing: 0,
-      runSpacing: 0,
-      children: displayed.map((char) {
-        final showChar = mode != PracticeMode.dictation;
-        final tracing = mode == PracticeMode.tracing;
-
+      children: items.map((char) {
         return SizedBox(
-          width: width,
-          height: width,
+          width: side,
+          height: side,
           child: CustomPaint(
             painter: PracticeGridPainter(gridType),
             child: Center(
-              child: showChar
-                  ? Text(
+              child: mode == PracticeMode.dictation
+                  ? null
+                  : Text(
                       char,
                       style: TextStyle(
                         fontFamily: fontStyle.family,
-                        fontSize: width * 0.7,
-                        color: tracing
-                            ? const Color(0x558B5E3C)
+                        fontSize: side * 0.68,
+                        color: mode == PracticeMode.tracing
+                            ? const Color(0x668B5E3C)
                             : ink,
                       ),
-                    )
-                  : null,
+                    ),
             ),
           ),
         );
@@ -721,55 +628,30 @@ class _PracticeHomePageState extends State<PracticeHomePage> {
     );
   }
 
-  Widget _buildTips() {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF2EADF),
-        borderRadius: BorderRadius.circular(14),
+  Widget _panel({required String title, required Widget child}) {
+    return Card(
+      color: Colors.white,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: const BorderSide(color: Color(0xFFE9E0D5)),
       ),
-      child: const Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(Icons.lightbulb_outline, color: accent),
-          SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              '小提示：描红适合初学，临摹适合熟悉字形，默写适合检查记忆。导出 PDF 后可以在 A4 纸上打印。',
-              style: TextStyle(fontSize: 12, height: 1.7),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: ink,
+              ),
             ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildBottomBar() {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-      decoration: const BoxDecoration(
-        color: paper,
-        border: Border(
-          top: BorderSide(color: Color(0xFFE9E0D5)),
-        ),
-      ),
-      child: SizedBox(
-        width: double.infinity,
-        height: 50,
-        child: FilledButton.icon(
-          onPressed: selectedPoem == null ? null : _exportPdf,
-          icon: const Icon(Icons.picture_as_pdf_outlined),
-          label: const Text(
-            '生成并打印练习纸 PDF',
-            style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
-          ),
-          style: FilledButton.styleFrom(
-            backgroundColor: accent,
-            foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14),
-            ),
-          ),
+            const SizedBox(height: 14),
+            child,
+          ],
         ),
       ),
     );
@@ -780,23 +662,16 @@ class _PracticeHomePageState extends State<PracticeHomePage> {
     if (poem == null) return;
 
     try {
+      // 从项目 assets 读取真实字体文件，PDF 不再使用在线字体。
+      final fontData = await rootBundle.load(fontStyle.assetPath);
+      final selectedFont = pw.Font.ttf(fontData);
+
       final pdf = pw.Document();
-
-      final pw.Font regular;
-      final pw.Font bold;
-
-      if (fontStyle == FontStyleChoice.song) {
-        regular = await PdfGoogleFonts.notoSerifSCRegular();
-      } else {
-        regular = await PdfGoogleFonts.notoSansSCRegular();
-      }
-      bold = await PdfGoogleFonts.notoSansSCBold();
-
       final characters = poem.lines
           .join()
           .runes
           .map(String.fromCharCode)
-          .where((s) => s.trim().isNotEmpty)
+          .where((c) => c.trim().isNotEmpty)
           .toList();
 
       final cells = <String>[];
@@ -806,67 +681,68 @@ class _PracticeHomePageState extends State<PracticeHomePage> {
         }
       }
 
-      const int columns = 10;
-      final double pdfCellSize =
-          (cellSize * 0.75).clamp(24.0, 42.0).toDouble();
-
+      const columns = 10;
       final rows = <List<String>>[];
       for (int i = 0; i < cells.length; i += columns) {
         final end = math.min(i + columns, cells.length);
         rows.add(cells.sublist(i, end));
       }
 
-      final usableWidth = PdfPageFormat.a4.width - 64;
-      final actualCellSize =
-          math.min(pdfCellSize, usableWidth / columns);
+      const margin = 30.0;
+      final availableWidth = PdfPageFormat.a4.width - margin * 2;
+      final actualCell = math.min(
+        (cellSize * 0.75).clamp(24.0, 42.0).toDouble(),
+        availableWidth / columns,
+      );
 
-      final gridRows = <pw.Widget>[];
-
+      final gridWidgets = <pw.Widget>[];
       for (final row in rows) {
-        gridRows.add(
+        gridWidgets.add(
           pw.Row(
             mainAxisAlignment: pw.MainAxisAlignment.center,
             children: row.map((char) {
               return pw.SizedBox(
-                width: actualCellSize,
-                height: actualCellSize,
+                width: actualCell,
+                height: actualCell,
                 child: pw.Stack(
                   children: [
-                    pw.Container(
-                      decoration: pw.BoxDecoration(
-                        border: pw.Border.all(
-                          color: PdfColors.grey600,
-                          width: 0.5,
+                    pw.Positioned.fill(
+                      child: pw.Container(
+                        decoration: pw.BoxDecoration(
+                          border: pw.Border.all(
+                            color: PdfColors.grey600,
+                            width: 0.5,
+                          ),
                         ),
                       ),
                     ),
                     if (gridType != GridType.square)
                       pw.Positioned(
-                        left: actualCellSize / 2,
+                        left: actualCell / 2,
                         top: 0,
                         bottom: 0,
                         child: pw.Container(
-                          width: 0.4,
+                          width: 0.35,
                           color: PdfColors.grey400,
                         ),
                       ),
                     if (gridType != GridType.square)
                       pw.Positioned(
-                        top: actualCellSize / 2,
+                        top: actualCell / 2,
                         left: 0,
                         right: 0,
                         child: pw.Container(
-                          height: 0.4,
+                          height: 0.35,
                           color: PdfColors.grey400,
                         ),
                       ),
                     if (gridType == GridType.mi)
                       pw.CustomPaint(
-                        size: PdfPoint(actualCellSize, actualCellSize),
+                        size: PdfPoint(actualCell, actualCell),
                         painter: (canvas, size) {
                           canvas
                             ..setStrokeColor(PdfColors.grey400)
-                            ..setLineWidth(0.4)
+                            ..setLineWidth(0.35)
                             ..moveTo(0, 0)
                             ..lineTo(size.x, size.y)
                             ..moveTo(size.x, 0)
@@ -879,8 +755,8 @@ class _PracticeHomePageState extends State<PracticeHomePage> {
                         child: pw.Text(
                           char,
                           style: pw.TextStyle(
-                            font: regular,
-                            fontSize: actualCellSize * 0.68,
+                            font: selectedFont,
+                            fontSize: actualCell * 0.68,
                             color: mode == PracticeMode.tracing
                                 ? PdfColors.grey400
                                 : PdfColors.black,
@@ -893,74 +769,68 @@ class _PracticeHomePageState extends State<PracticeHomePage> {
             }).toList(),
           ),
         );
-        gridRows.add(pw.SizedBox(height: 3));
+        gridWidgets.add(pw.SizedBox(height: 3));
       }
 
       pdf.addPage(
         pw.MultiPage(
           pageFormat: PdfPageFormat.a4,
-          margin: const pw.EdgeInsets.fromLTRB(32, 32, 32, 32),
-          theme: pw.ThemeData.withFont(
-            base: regular,
-            bold: bold,
+          margin: const pw.EdgeInsets.fromLTRB(
+            margin,
+            margin,
+            margin,
+            margin,
           ),
-          build: (context) {
-            return [
-              if (showTitle)
-                pw.Center(
-                  child: pw.Text(
-                    poem.title,
-                    style: pw.TextStyle(
-                      font: bold,
-                      fontSize: 20,
-                    ),
+          theme: pw.ThemeData.withFont(base: selectedFont),
+          build: (context) => [
+            if (showTitle)
+              pw.Center(
+                child: pw.Text(
+                  poem.title,
+                  style: pw.TextStyle(font: selectedFont, fontSize: 20),
+                ),
+              ),
+            if (showAuthor) ...[
+              pw.SizedBox(height: 5),
+              pw.Center(
+                child: pw.Text(
+                  poem.author,
+                  style: pw.TextStyle(
+                    font: selectedFont,
+                    fontSize: 11,
+                    color: PdfColors.grey700,
                   ),
                 ),
-              if (showAuthor) ...[
-                pw.SizedBox(height: 5),
-                pw.Center(
-                  child: pw.Text(
-                    poem.author,
-                    style: pw.TextStyle(
-                      font: regular,
-                      fontSize: 11,
-                      color: PdfColors.grey700,
-                    ),
-                  ),
-                ),
-              ],
-              if (showTitle || showAuthor)
-                pw.SizedBox(height: 16),
-              if (showOriginal)
-                ...poem.lines.map(
-                  (line) => pw.Padding(
-                    padding: const pw.EdgeInsets.only(bottom: 4),
-                    child: pw.Center(
-                      child: pw.Text(
-                        line,
-                        style: pw.TextStyle(
-                          font: regular,
-                          fontSize: 12,
-                        ),
+              ),
+            ],
+            if (showTitle || showAuthor) pw.SizedBox(height: 16),
+            if (showOriginal)
+              ...poem.lines.map(
+                (line) => pw.Padding(
+                  padding: const pw.EdgeInsets.only(bottom: 4),
+                  child: pw.Center(
+                    child: pw.Text(
+                      line,
+                      style: pw.TextStyle(
+                        font: selectedFont,
+                        fontSize: 12,
                       ),
                     ),
                   ),
                 ),
-              if (showOriginal)
-                pw.SizedBox(height: 14),
-              ...gridRows,
-            ];
-          },
+              ),
+            if (showOriginal) pw.SizedBox(height: 14),
+            ...gridWidgets,
+          ],
         ),
       );
 
       await Printing.layoutPdf(
-        onLayout: (format) async => pdf.save(),
+        onLayout: (_) async => pdf.save(),
         name: '${poem.title}_书法练习.pdf',
       );
     } catch (e) {
       if (!mounted) return;
-
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('生成 PDF 失败：$e'),
@@ -971,82 +841,6 @@ class _PracticeHomePageState extends State<PracticeHomePage> {
   }
 }
 
-class _SectionHeading extends StatelessWidget {
-  final String number;
-  final String title;
-
-  const _SectionHeading({
-    required this.number,
-    required this.title,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Container(
-          width: 30,
-          height: 30,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: const Color(0xFFF0E3D4),
-            borderRadius: BorderRadius.circular(9),
-          ),
-          child: Text(
-            number,
-            style: const TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.bold,
-              color: accent,
-            ),
-          ),
-        ),
-        const SizedBox(width: 10),
-        Text(
-          title,
-          style: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-            color: ink,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _SwitchLine extends StatelessWidget {
-  final String title;
-  final String? subtitle;
-  final bool value;
-  final ValueChanged<bool> onChanged;
-
-  const _SwitchLine({
-    required this.title,
-    this.subtitle,
-    required this.value,
-    required this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return SwitchListTile(
-      contentPadding: EdgeInsets.zero,
-      dense: true,
-      title: Text(title, style: const TextStyle(fontSize: 14)),
-      subtitle: subtitle == null
-          ? null
-          : Text(
-              subtitle!,
-              style: const TextStyle(fontSize: 11),
-            ),
-      value: value,
-      onChanged: onChanged,
-      activeTrackColor: accent,
-    );
-  }
-}
-
 class PracticeGridPainter extends CustomPainter {
   final GridType type;
 
@@ -1054,31 +848,31 @@ class PracticeGridPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final borderPaint = Paint()
+    final border = Paint()
       ..color = const Color(0xFFB9B3AB)
       ..strokeWidth = 0.7
       ..style = PaintingStyle.stroke;
 
-    final guidePaint = Paint()
+    final guide = Paint()
       ..color = const Color(0xFFCEC7BD)
       ..strokeWidth = 0.6
       ..style = PaintingStyle.stroke;
 
     canvas.drawRect(
       Rect.fromLTWH(0, 0, size.width, size.height),
-      borderPaint,
+      border,
     );
 
-    if (type == GridType.tian || type == GridType.mi) {
+    if (type != GridType.square) {
       canvas.drawLine(
         Offset(size.width / 2, 0),
         Offset(size.width / 2, size.height),
-        guidePaint,
+        guide,
       );
       canvas.drawLine(
         Offset(0, size.height / 2),
         Offset(size.width, size.height / 2),
-        guidePaint,
+        guide,
       );
     }
 
@@ -1086,12 +880,12 @@ class PracticeGridPainter extends CustomPainter {
       canvas.drawLine(
         const Offset(0, 0),
         Offset(size.width, size.height),
-        guidePaint,
+        guide,
       );
       canvas.drawLine(
         Offset(size.width, 0),
         Offset(0, size.height),
-        guidePaint,
+        guide,
       );
     }
   }
