@@ -1,4 +1,3 @@
-
 name: 构建书法练习 App APK
 
 on:
@@ -30,6 +29,9 @@ jobs:
 
       - name: 生成 Android 工程
         run: flutter create --platforms=android --org com.example .
+
+      - name: 删除自动生成的默认测试
+        run: rm -f test/widget_test.dart
 
       - name: 获取依赖
         run: flutter pub get
