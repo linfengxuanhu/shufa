@@ -1,23 +1,48 @@
+
 name: shufa_practice
-description: 硬笔楷书古诗词字帖生成器
-publish_to: "none"
+description: Chinese calligraphy and poetry practice worksheet app.
+publish_to: 'none'
 version: 1.0.0+1
 
 environment:
-  sdk: ">=3.3.0 <4.0.0"
+  sdk: '>=3.10.0 <4.0.0'
 
 dependencies:
   flutter:
     sdk: flutter
-  path_provider: ^2.1.5
-  share_plus: ^10.1.4
   pdf: ^3.11.3
   printing: ^5.14.2
+  shared_preferences: ^2.5.5
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^5.0.0
+  flutter_lints: ^6.0.0
 
 flutter:
   uses-material-design: true
+
+  fonts:
+    - family: KaiTi
+      fonts:
+        - asset: assets/fonts/KaiTi.ttf
+
+    - family: XingKai
+      fonts:
+        - asset: assets/fonts/XingKai.ttf
+
+    - family: XingShu
+      fonts:
+        - asset: assets/fonts/XingShu.ttf
+
+    - family: LiShu
+      fonts:
+        - asset: assets/fonts/LiShu.ttf
+
+    - family: SongTi
+      fonts:
+        - asset: assets/fonts/SongTi.ttf
+
+    - family: HeiTi
+      fonts:
+        - asset: assets/fonts/HeiTi.ttf
