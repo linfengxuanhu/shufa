@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:pdf/pdf.dart';
@@ -116,6 +117,7 @@ class _PracticeHomePageState extends State<PracticeHomePage> {
   bool showAuthor = true;
   bool showOriginal = true;
   bool favoritesOnly = false;
+
   Set<String> favorites = {};
 
   List<String> get categories {
@@ -125,14 +127,17 @@ class _PracticeHomePageState extends State<PracticeHomePage> {
 
   List<Poem> get filteredPoems {
     final query = searchController.text.trim().toLowerCase();
+
     return poems.where((poem) {
       final categoryMatches =
           selectedCategory == '全部' || poem.category == selectedCategory;
       final favoriteMatches =
           !favoritesOnly || favorites.contains(poem.title);
+
       final text =
           '${poem.title} ${poem.author} ${poem.category} ${poem.lines.join()}'
               .toLowerCase();
+
       return categoryMatches &&
           favoriteMatches &&
           (query.isEmpty || text.contains(query));
@@ -142,13 +147,16 @@ class _PracticeHomePageState extends State<PracticeHomePage> {
   @override
   void initState() {
     super.initState();
+
     selectedPoem = poems.isEmpty ? null : poems.first;
+
     searchController.addListener(_onSearchChanged);
     _loadFavorites();
   }
 
   void _onSearchChanged() {
     final available = filteredPoems;
+
     setState(() {
       if (selectedPoem == null ||
           !available.any((p) => p.title == selectedPoem!.title)) {
@@ -159,10 +167,14 @@ class _PracticeHomePageState extends State<PracticeHomePage> {
 
   Future<void> _loadFavorites() async {
     final prefs = await SharedPreferences.getInstance();
+
     if (!mounted) return;
+
     setState(() {
       favorites = (prefs.getStringList('shufa_favorites') ?? []).toSet();
+
       final available = filteredPoems;
+
       if (selectedPoem == null && available.isNotEmpty) {
         selectedPoem = available.first;
       }
@@ -171,15 +183,19 @@ class _PracticeHomePageState extends State<PracticeHomePage> {
 
   Future<void> _toggleFavorite(Poem poem) async {
     final prefs = await SharedPreferences.getInstance();
+
     setState(() {
       if (!favorites.add(poem.title)) {
         favorites.remove(poem.title);
       }
     });
+
     await prefs.setStringList('shufa_favorites', favorites.toList());
 
     if (!mounted) return;
+
     final available = filteredPoems;
+
     if (selectedPoem != null &&
         !available.any((p) => p.title == selectedPoem!.title)) {
       setState(() {
@@ -211,7 +227,9 @@ class _PracticeHomePageState extends State<PracticeHomePage> {
             onPressed: () {
               setState(() {
                 favoritesOnly = !favoritesOnly;
+
                 final list = filteredPoems;
+
                 if (selectedPoem == null ||
                     !list.any((p) => p.title == selectedPoem!.title)) {
                   selectedPoem = list.isEmpty ? null : list.first;
@@ -305,6 +323,15 @@ class _PracticeHomePageState extends State<PracticeHomePage> {
   }
 
   Widget _poemSelector(List<Poem> available) {
+    final categoryInitialValue = categories.contains(selectedCategory)
+        ? selectedCategory
+        : '全部';
+
+    final poemInitialValue =
+        available.any((p) => p.title == selectedPoem?.title)
+            ? selectedPoem!.title
+            : (available.isNotEmpty ? available.first.title : null);
+
     return _panel(
       title: '01  选择诗词',
       child: Column(
@@ -325,9 +352,8 @@ class _PracticeHomePageState extends State<PracticeHomePage> {
           ),
           const SizedBox(height: 12),
           DropdownButtonFormField<String>(
-            value: categories.contains(selectedCategory)
-                ? selectedCategory
-                : '全部',
+            key: ValueKey('category_$categoryInitialValue'),
+            initialValue: categoryInitialValue,
             isExpanded: true,
             decoration: const InputDecoration(
               labelText: '诗词分类',
@@ -338,9 +364,12 @@ class _PracticeHomePageState extends State<PracticeHomePage> {
                 .toList(),
             onChanged: (value) {
               if (value == null) return;
+
               setState(() {
                 selectedCategory = value;
+
                 final list = filteredPoems;
+
                 if (selectedPoem == null ||
                     !list.any((p) => p.title == selectedPoem!.title)) {
                   selectedPoem = list.isEmpty ? null : list.first;
@@ -356,9 +385,8 @@ class _PracticeHomePageState extends State<PracticeHomePage> {
             )
           else
             DropdownButtonFormField<String>(
-              value: available.any((p) => p.title == selectedPoem?.title)
-                  ? selectedPoem!.title
-                  : available.first.title,
+              key: ValueKey('poem_$poemInitialValue'),
+              initialValue: poemInitialValue,
               isExpanded: true,
               decoration: const InputDecoration(
                 labelText: '选择作品',
@@ -377,6 +405,7 @@ class _PracticeHomePageState extends State<PracticeHomePage> {
                   .toList(),
               onChanged: (value) {
                 if (value == null) return;
+
                 setState(() {
                   selectedPoem =
                       available.firstWhere((p) => p.title == value);
@@ -532,6 +561,7 @@ class _PracticeHomePageState extends State<PracticeHomePage> {
 
   Widget _preview() {
     final poem = selectedPoem;
+
     return _panel(
       title: '03  练习页预览',
       child: Container(
@@ -586,13 +616,16 @@ class _PracticeHomePageState extends State<PracticeHomePage> {
   }
 
   Widget _previewGrid(Poem poem) {
-    final chars = poem.lines.join().runes
+    final chars = poem.lines
+        .join()
+        .runes
         .map(String.fromCharCode)
         .where((c) => c.trim().isNotEmpty)
         .take(12)
         .toList();
 
     final items = <String>[];
+
     for (final char in chars) {
       for (int i = 0; i < repeatCount; i++) {
         items.add(char);
@@ -600,6 +633,7 @@ class _PracticeHomePageState extends State<PracticeHomePage> {
     }
 
     final side = math.min(cellSize, 48.0);
+
     return Wrap(
       alignment: WrapAlignment.center,
       children: items.map((char) {
@@ -659,14 +693,16 @@ class _PracticeHomePageState extends State<PracticeHomePage> {
 
   Future<void> _exportPdf() async {
     final poem = selectedPoem;
+
     if (poem == null) return;
 
     try {
-      // 从项目 assets 读取真实字体文件，PDF 不再使用在线字体。
+      // 从项目 assets 读取所选字体，PDF 使用对应的真实字体文件。
       final fontData = await rootBundle.load(fontStyle.assetPath);
       final selectedFont = pw.Font.ttf(fontData);
 
       final pdf = pw.Document();
+
       final characters = poem.lines
           .join()
           .runes
@@ -675,6 +711,7 @@ class _PracticeHomePageState extends State<PracticeHomePage> {
           .toList();
 
       final cells = <String>[];
+
       for (final char in characters) {
         for (int i = 0; i < repeatCount; i++) {
           cells.add(char);
@@ -683,6 +720,7 @@ class _PracticeHomePageState extends State<PracticeHomePage> {
 
       const columns = 10;
       final rows = <List<String>>[];
+
       for (int i = 0; i < cells.length; i += columns) {
         final end = math.min(i + columns, cells.length);
         rows.add(cells.sublist(i, end));
@@ -690,12 +728,14 @@ class _PracticeHomePageState extends State<PracticeHomePage> {
 
       const margin = 30.0;
       final availableWidth = PdfPageFormat.a4.width - margin * 2;
+
       final actualCell = math.min(
         (cellSize * 0.75).clamp(24.0, 42.0).toDouble(),
         availableWidth / columns,
       );
 
       final gridWidgets = <pw.Widget>[];
+
       for (final row in rows) {
         gridWidgets.add(
           pw.Row(
@@ -769,6 +809,7 @@ class _PracticeHomePageState extends State<PracticeHomePage> {
             }).toList(),
           ),
         );
+
         gridWidgets.add(pw.SizedBox(height: 3));
       }
 
@@ -787,7 +828,10 @@ class _PracticeHomePageState extends State<PracticeHomePage> {
               pw.Center(
                 child: pw.Text(
                   poem.title,
-                  style: pw.TextStyle(font: selectedFont, fontSize: 20),
+                  style: pw.TextStyle(
+                    font: selectedFont,
+                    fontSize: 20,
+                  ),
                 ),
               ),
             if (showAuthor) ...[
@@ -831,6 +875,7 @@ class _PracticeHomePageState extends State<PracticeHomePage> {
       );
     } catch (e) {
       if (!mounted) return;
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('生成 PDF 失败：$e'),
@@ -869,6 +914,7 @@ class PracticeGridPainter extends CustomPainter {
         Offset(size.width / 2, size.height),
         guide,
       );
+
       canvas.drawLine(
         Offset(0, size.height / 2),
         Offset(size.width, size.height / 2),
@@ -882,6 +928,7 @@ class PracticeGridPainter extends CustomPainter {
         Offset(size.width, size.height),
         guide,
       );
+
       canvas.drawLine(
         Offset(size.width, 0),
         Offset(0, size.height),
