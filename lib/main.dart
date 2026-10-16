@@ -1,4 +1,3 @@
-import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:pdf/pdf.dart';
@@ -219,9 +218,7 @@ class _HomePageState extends State<HomePage> {
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('导出失败：$e'),
-        ),
+        SnackBar(content: Text('导出失败：$e')),
       );
     }
   }
@@ -249,8 +246,9 @@ class _HomePageState extends State<HomePage> {
           pw.Positioned.fill(
             child: pw.CustomPaint(
               painter: (canvas, box) {
-                final w = box!.width;
-                final h = box.height;
+                // PdfPoint 的 x、y 分别表示绘制区域的宽、高。
+                final double w = box.x;
+                final double h = box.y;
 
                 canvas.setStrokeColor(PdfColors.grey400);
                 canvas.setLineWidth(0.45);
@@ -304,7 +302,7 @@ class _HomePageState extends State<HomePage> {
           children: [
             _sectionTitle('选择诗词', Icons.menu_book_outlined),
             DropdownButtonFormField<Poem>(
-              value: selectedPoem,
+              initialValue: selectedPoem,
               isExpanded: true,
               decoration: const InputDecoration(
                 filled: true,
