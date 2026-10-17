@@ -106,6 +106,7 @@ class _PracticeHomePageState extends State<PracticeHomePage> {
 
   Poem? selectedPoem;
   String selectedCategory = '全部';
+
   PracticeMode mode = PracticeMode.tracing;
   GridType gridType = GridType.tian;
   FontStyleChoice fontStyle = FontStyleChoice.kai;
@@ -174,7 +175,6 @@ class _PracticeHomePageState extends State<PracticeHomePage> {
       favorites = (prefs.getStringList('shufa_favorites') ?? []).toSet();
 
       final available = filteredPoems;
-
       if (selectedPoem == null && available.isNotEmpty) {
         selectedPoem = available.first;
       }
@@ -229,7 +229,6 @@ class _PracticeHomePageState extends State<PracticeHomePage> {
                 favoritesOnly = !favoritesOnly;
 
                 final list = filteredPoems;
-
                 if (selectedPoem == null ||
                     !list.any((p) => p.title == selectedPoem!.title)) {
                   selectedPoem = list.isEmpty ? null : list.first;
@@ -259,7 +258,7 @@ class _PracticeHomePageState extends State<PracticeHomePage> {
                   _preview(),
                   const SizedBox(height: 12),
                   const Text(
-                    '提示：预览用于查看大致排版，打印效果以导出的 PDF 为准。',
+                    '预览展示连续诗句填格效果。实际打印时会根据 A4 纸张尺寸自动计算行数和每行字数。',
                     style: TextStyle(fontSize: 12, color: Colors.black54),
                   ),
                 ],
@@ -314,7 +313,7 @@ class _PracticeHomePageState extends State<PracticeHomePage> {
           ),
           SizedBox(height: 8),
           Text(
-            '自由选择诗词、字体和格子，制作可打印的练字纸。',
+            '自由选择诗词、字体和格子。让诗句连续填满练习区，写字的同时也能反复诵读。',
             style: TextStyle(fontSize: 13, height: 1.6),
           ),
         ],
@@ -369,7 +368,6 @@ class _PracticeHomePageState extends State<PracticeHomePage> {
                 selectedCategory = value;
 
                 final list = filteredPoems;
-
                 if (selectedPoem == null ||
                     !list.any((p) => p.title == selectedPoem!.title)) {
                   selectedPoem = list.isEmpty ? null : list.first;
@@ -550,12 +548,34 @@ class _PracticeHomePageState extends State<PracticeHomePage> {
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             title: const Text('显示原诗文字'),
-            subtitle: const Text('关闭后生成纯格子练习纸'),
+            subtitle: const Text('关闭后，练习区仍会连续填入诗句'),
             value: showOriginal,
             onChanged: (v) => setState(() => showOriginal = v),
           ),
         ],
       ),
+    );
+  }
+
+  /// 将原诗转成连续字符序列。
+  /// 保留标点，忽略换行和空白。
+  List<String> _poemCharacters(Poem poem) {
+    return poem.lines
+        .join()
+        .runes
+        .map(String.fromCharCode)
+        .where((c) => c.trim().isNotEmpty)
+        .toList();
+  }
+
+  /// 从诗的第一个字开始循环，直到填满目标格数。
+  List<String> _makeRepeatedCharacters(Poem poem, int count) {
+    final source = _poemCharacters(poem);
+    if (source.isEmpty || count <= 0) return [];
+
+    return List<String>.generate(
+      count,
+      (index) => source[index % source.length],
     );
   }
 
@@ -593,7 +613,7 @@ class _PracticeHomePageState extends State<PracticeHomePage> {
                         ),
                       ),
                     ),
-                  if (showOriginal)
+                  if (showOriginal) ...[
                     ...poem.lines.map(
                       (line) => Padding(
                         padding: const EdgeInsets.only(bottom: 4),
@@ -607,7 +627,19 @@ class _PracticeHomePageState extends State<PracticeHomePage> {
                         ),
                       ),
                     ),
-                  const SizedBox(height: 14),
+                    const Divider(height: 24),
+                  ],
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      '${gridType.label}练习区 · 连续循环诗句',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Colors.black54,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
                   _previewGrid(poem),
                 ],
               ),
@@ -615,24 +647,16 @@ class _PracticeHomePageState extends State<PracticeHomePage> {
     );
   }
 
+  /// 手机预览区按屏幕宽度自动换行。
+  /// 为保证预览流畅，显示有限数量的格子；PDF 会按 A4 实际尺寸计算。
   Widget _previewGrid(Poem poem) {
-    final chars = poem.lines
-        .join()
-        .runes
-        .map(String.fromCharCode)
-        .where((c) => c.trim().isNotEmpty)
-        .take(12)
-        .toList();
+    final side = math.min(cellSize, 40.0);
+    final previewCount = math.max(
+      1,
+      (MediaQuery.of(context).size.width / side).floor() * 8,
+    );
 
-    final items = <String>[];
-
-    for (final char in chars) {
-      for (int i = 0; i < repeatCount; i++) {
-        items.add(char);
-      }
-    }
-
-    final side = math.min(cellSize, 48.0);
+    final items = _makeRepeatedCharacters(poem, previewCount);
 
     return Wrap(
       alignment: WrapAlignment.center,
@@ -649,7 +673,7 @@ class _PracticeHomePageState extends State<PracticeHomePage> {
                       char,
                       style: TextStyle(
                         fontFamily: fontStyle.family,
-                        fontSize: side * 0.68,
+                        fontSize: side * 0.65,
                         color: mode == PracticeMode.tracing
                             ? const Color(0x668B5E3C)
                             : ink,
@@ -693,69 +717,91 @@ class _PracticeHomePageState extends State<PracticeHomePage> {
 
   Future<void> _exportPdf() async {
     final poem = selectedPoem;
-
     if (poem == null) return;
 
     try {
-      // 从项目 assets 读取所选字体，PDF 使用对应的真实字体文件。
       final fontData = await rootBundle.load(fontStyle.assetPath);
       final selectedFont = pw.Font.ttf(fontData);
 
       final pdf = pw.Document();
 
-      final characters = poem.lines
-          .join()
-          .runes
-          .map(String.fromCharCode)
-          .where((c) => c.trim().isNotEmpty)
-          .toList();
+      // A4 纵向尺寸，单位为 PDF points。
+      const margin = 28.0;
+      const columnsGap = 0.0;
+      const rowGap = 2.0;
 
-      final cells = <String>[];
+      final pageWidth = PdfPageFormat.a4.width;
+      final pageHeight = PdfPageFormat.a4.height;
+      final availableWidth = pageWidth - margin * 2;
+      final availableHeight = pageHeight - margin * 2;
 
-      for (final char in characters) {
-        for (int i = 0; i < repeatCount; i++) {
-          cells.add(char);
-        }
-      }
+      // 滑块值映射到 PDF 格子大小，避免格子过大导致一行字数太少。
+      final desiredCell = (cellSize * 0.72).clamp(22.0, 40.0).toDouble();
 
-      const columns = 10;
-      final rows = <List<String>>[];
-
-      for (int i = 0; i < cells.length; i += columns) {
-        final end = math.min(i + columns, cells.length);
-        rows.add(cells.sublist(i, end));
-      }
-
-      const margin = 30.0;
-      final availableWidth = PdfPageFormat.a4.width - margin * 2;
-
-      final actualCell = math.min(
-        (cellSize * 0.75).clamp(24.0, 42.0).toDouble(),
-        availableWidth / columns,
+      // 根据 A4 的实际可用宽度自动计算列数。
+      final columns = math.max(
+        1,
+        ((availableWidth + columnsGap) / (desiredCell + columnsGap)).floor(),
       );
 
-      final gridWidgets = <pw.Widget>[];
+      final actualCell =
+          (availableWidth - (columns - 1) * columnsGap) / columns;
 
-      for (final row in rows) {
-        gridWidgets.add(
+      // 预留标题、作者、原诗和间距的高度。
+      double headerHeight = 0;
+
+      if (showTitle) headerHeight += 28;
+      if (showAuthor) headerHeight += 20;
+      if (showTitle || showAuthor) headerHeight += 8;
+
+      if (showOriginal) {
+        headerHeight += poem.lines.length * 17.0;
+        headerHeight += 12;
+      }
+
+      // 练习格自动占据剩余页面空间。
+      final gridAvailableHeight =
+          math.max(actualCell + rowGap, availableHeight - headerHeight);
+
+      final rows = math.max(
+        1,
+        ((gridAvailableHeight + rowGap) / (actualCell + rowGap)).floor(),
+      );
+
+      final totalCells = columns * rows;
+
+      // 从诗的第一个字开始循环填充，直到铺满练习区。
+      final cells = _makeRepeatedCharacters(poem, totalCells);
+
+      final gridRows = <pw.Widget>[];
+
+      for (int rowIndex = 0; rowIndex < rows; rowIndex++) {
+        final start = rowIndex * columns;
+        final end = math.min(start + columns, cells.length);
+        final rowCharacters = cells.sublist(start, end);
+
+        gridRows.add(
           pw.Row(
-            mainAxisAlignment: pw.MainAxisAlignment.center,
-            children: row.map((char) {
+            mainAxisAlignment: pw.MainAxisAlignment.start,
+            children: rowCharacters.map((char) {
               return pw.SizedBox(
                 width: actualCell,
                 height: actualCell,
                 child: pw.Stack(
                   children: [
+                    // 格子边框
                     pw.Positioned.fill(
                       child: pw.Container(
                         decoration: pw.BoxDecoration(
                           border: pw.Border.all(
                             color: PdfColors.grey600,
-                            width: 0.5,
+                            width: 0.45,
                           ),
                         ),
                       ),
                     ),
+
+                    // 田字格横竖中线
                     if (gridType != GridType.square)
                       pw.Positioned(
                         left: actualCell / 2,
@@ -776,6 +822,8 @@ class _PracticeHomePageState extends State<PracticeHomePage> {
                           color: PdfColors.grey400,
                         ),
                       ),
+
+                    // 米字格对角线
                     if (gridType == GridType.mi)
                       pw.CustomPaint(
                         size: PdfPoint(actualCell, actualCell),
@@ -790,13 +838,16 @@ class _PracticeHomePageState extends State<PracticeHomePage> {
                             ..strokePath();
                         },
                       ),
+
+                    // 描红、临摹显示诗句；默写只显示格子。
                     if (mode != PracticeMode.dictation)
                       pw.Center(
                         child: pw.Text(
                           char,
+                          textAlign: pw.TextAlign.center,
                           style: pw.TextStyle(
                             font: selectedFont,
-                            fontSize: actualCell * 0.68,
+                            fontSize: actualCell * 0.66,
                             color: mode == PracticeMode.tracing
                                 ? PdfColors.grey400
                                 : PdfColors.black,
@@ -810,62 +861,64 @@ class _PracticeHomePageState extends State<PracticeHomePage> {
           ),
         );
 
-        gridWidgets.add(pw.SizedBox(height: 3));
+        if (rowIndex < rows - 1) {
+          gridRows.add(pw.SizedBox(height: rowGap));
+        }
       }
 
       pdf.addPage(
-        pw.MultiPage(
+        pw.Page(
           pageFormat: PdfPageFormat.a4,
-          margin: const pw.EdgeInsets.fromLTRB(
-            margin,
-            margin,
-            margin,
-            margin,
-          ),
-          theme: pw.ThemeData.withFont(base: selectedFont),
-          build: (context) => [
-            if (showTitle)
-              pw.Center(
-                child: pw.Text(
-                  poem.title,
-                  style: pw.TextStyle(
-                    font: selectedFont,
-                    fontSize: 20,
-                  ),
-                ),
-              ),
-            if (showAuthor) ...[
-              pw.SizedBox(height: 5),
-              pw.Center(
-                child: pw.Text(
-                  poem.author,
-                  style: pw.TextStyle(
-                    font: selectedFont,
-                    fontSize: 11,
-                    color: PdfColors.grey700,
-                  ),
-                ),
-              ),
-            ],
-            if (showTitle || showAuthor) pw.SizedBox(height: 16),
-            if (showOriginal)
-              ...poem.lines.map(
-                (line) => pw.Padding(
-                  padding: const pw.EdgeInsets.only(bottom: 4),
-                  child: pw.Center(
+          margin: const pw.EdgeInsets.all(margin),
+          build: (context) {
+            return pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+              children: [
+                if (showTitle)
+                  pw.Center(
                     child: pw.Text(
-                      line,
+                      poem.title,
                       style: pw.TextStyle(
                         font: selectedFont,
-                        fontSize: 12,
+                        fontSize: 20,
                       ),
                     ),
                   ),
-                ),
-              ),
-            if (showOriginal) pw.SizedBox(height: 14),
-            ...gridWidgets,
-          ],
+                if (showAuthor) ...[
+                  pw.SizedBox(height: 4),
+                  pw.Center(
+                    child: pw.Text(
+                      poem.author,
+                      style: pw.TextStyle(
+                        font: selectedFont,
+                        fontSize: 11,
+                        color: PdfColors.grey700,
+                      ),
+                    ),
+                  ),
+                ],
+                if (showTitle || showAuthor) pw.SizedBox(height: 8),
+                if (showOriginal) ...[
+                  ...poem.lines.map(
+                    (line) => pw.Padding(
+                      padding: const pw.EdgeInsets.only(bottom: 3),
+                      child: pw.Center(
+                        child: pw.Text(
+                          line,
+                          style: pw.TextStyle(
+                            font: selectedFont,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  pw.SizedBox(height: 8),
+                ],
+                ...gridRows,
+              ],
+            );
+          },
         ),
       );
 
